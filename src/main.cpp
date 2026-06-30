@@ -54,47 +54,46 @@ void stop_pitch() {
   Serial.println("PITCH MOTOR STOPPED");
 }
 
-void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxSteps) {
-  static int count = 0;
-
-  if (homingState == HOMING_YAW || homingState == HOMING_PITCH) {
-    targetStepper.setAcceleration(1);
-    targetStepper.setMaxSpeed(1);
-    targetStepper.move(1); // Move one step at a time
-
-    if (digitalRead(axisLimitSwitchPin) == LOW) {
-      count++;
-      if (count >= axisMaxSteps) {
-        targetStepper.setCurrentPosition(0);
-        count = 0;
-        if (homingState == HOMING_YAW) {
-          yawHomed = true;
-          homingState = HOMING_PITCH;
-          Serial.println("Yaw homed!");
-        } else if (homingState == HOMING_PITCH) {
-          pitchHomed = true;
-          homingState = IDLE;
-          Serial.println("Pitch homed!");
-        }
-      }
-    } else {
-      // Limit switch is triggered
-      targetStepper.setCurrentPosition(0);
-      count = 0;
-      if (homingState == HOMING_YAW) {
-        yawHomed = true;
-        homingState = HOMING_PITCH;
-        Serial.println("Yaw homed!");
-      } else if (homingState == HOMING_PITCH) {
-        pitchHomed = true;
-        homingState = IDLE;
-        Serial.println("Pitch homed!");
-      }
-    }
-  }
-}
 // void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxSteps) {
-    Serial.print("axisMaxSteps : "); Serial.println(axisMaxSteps);
+//   static int count = 0;
+
+//   if (homingState == HOMING_YAW || homingState == HOMING_PITCH) {
+//     targetStepper.setAcceleration(1);
+//     targetStepper.setMaxSpeed(1);
+//     targetStepper.move(1); // Move one step at a time
+
+//     if (digitalRead(axisLimitSwitchPin) == LOW) {
+//       count++;
+//       if (count >= axisMaxSteps) {
+//         targetStepper.setCurrentPosition(0);
+//         count = 0;
+//         if (homingState == HOMING_YAW) {
+//           yawHomed = true;
+//           homingState = HOMING_PITCH;
+//           Serial.println("Yaw homed!");
+//         } else if (homingState == HOMING_PITCH) {
+//           pitchHomed = true;
+//           homingState = IDLE;
+//           Serial.println("Pitch homed!");
+//         }
+//       }
+//     } else {
+//       // Limit switch is triggered
+//       targetStepper.setCurrentPosition(0);
+//       count = 0;
+//       if (homingState == HOMING_YAW) {
+//         yawHomed = true;
+//         homingState = HOMING_PITCH;
+//         Serial.println("Yaw homed!");
+//       } else if (homingState == HOMING_PITCH) {
+//         pitchHomed = true;
+//         homingState = IDLE;
+//         Serial.println("Pitch homed!");
+//       }
+//     }
+//   }
+// }
+void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxSteps) {
     runAllowed = true;  //allow running
 
     targetStepper.setAcceleration(1);
@@ -103,8 +102,12 @@ void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxS
     // YAW_STEPPER.move(-1 * (YAW_MEASURED_STEPS_RANGE + 50));
     
     int count = 0;
+    // targetStepper.move(-axisMaxSteps);
     while (count <= axisMaxSteps && digitalRead(axisLimitSwitchPin) == LOW) {
-      targetStepper.move(1);
+      Serial.print("count : "); Serial.println(count);
+      targetStepper.move(1); // this states to move one step ahead
+      targetStepper.runToPosition();
+      // targetStepper.run();
       count ++;
     }
 
