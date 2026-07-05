@@ -4,20 +4,23 @@
 
 #define _LED_BUILTIN_ 27
 
-#define MOTORS_MAX_SPEED 50.0
+#define MOTORS_MAX_SPEED 300.0
 //Home the yaw motor once and set here the measured steps it took to reach the end switch
-#define YAW_MEASURED_STEPS_RANGE 1000
-#define YAW_STEP_PIN 15
-#define YAW_DIR_PIN 21
-#define YAW_LIMIT_PIN 18
-// #define YAW_LIMIT_PIN PC3
+#define PITCH_MEASURED_STEPS_RANGE 1000
+// #define YAW_STEP_PIN 15
+#define PITCH_STEP_PIN 15
+#define PITCH_DIR_PIN 21
+#define PITCH_LIMIT_PIN 18
 
 //Home the pitch motor once and set here the measured steps it took to reach the end switch
-#define PITCH_MEASURED_STEPS_RANGE 1000
+#define YAW_MEASURED_STEPS_RANGE 1000
 
-#define PITCH_STEP_PIN 22
-#define PITCH_DIR_PIN 23
-#define PITCH_LIMIT_PIN 19
+#define YAW_STEP_PIN 22
+#define YAW_DIR_PIN 23
+#define YAW_LIMIT_PIN 19
+
+#define XYE_ENABLE 14
+
 // #define PITCH_LIMIT_PIN PC2
 
 AccelStepper YAW_STEPPER(AccelStepper::DRIVER, YAW_STEP_PIN, YAW_DIR_PIN);
@@ -26,6 +29,7 @@ AccelStepper PITCH_STEPPER(AccelStepper::DRIVER, PITCH_STEP_PIN, PITCH_DIR_PIN);
 //Runtime variables
 volatile bool runAllowed = false;
 enum HomingState { IDLE, HOMING_YAW, HOMING_PITCH };
+enum MotorsEnableState { MOT_ENABLED, MOT_DISABLED };
 HomingState homingState = IDLE;
 bool yawHomed = false;
 bool pitchHomed = false;
@@ -33,88 +37,57 @@ bool pitchHomed = false;
 int YAW_SAFE_RANGE = YAW_MEASURED_STEPS_RANGE - 50;
 int PITCH_SAFE_RANGE = PITCH_MEASURED_STEPS_RANGE - 50;
 
+#define HOMING_SPEED 500.0
+#define HOMING_ACCELERATION 100.0
 
-void stop_yaw() {
-  // runAllowed = false;
-
-  // YAW_STEPPER.setCurrentPosition(0);
-  // YAW_STEPPER.stop();
-  // YAW_STEPPER.disableOutputs();
-
-  Serial.println("YAW MOTOR STOPPED");
+void setMotorsEn(MotorsEnableState desiredState) {
+  switch (desiredState)
+  {
+  case MOT_ENABLED:
+    Serial.println("Motors enabled");
+    digitalWrite(XYE_ENABLE, LOW);
+    break;
+    case MOT_DISABLED:
+    Serial.println("Motors disabled");
+    digitalWrite(XYE_ENABLE, LOW);
+    break;
+  
+  default:
+    break;
+  }
+  
+  // if (desiredState == MOT_ENABLED) {
+  //   digitalWrite(XYE_ENABLE, LOW);
+  // }
+  // if (desiredState == MOT_DISABLED) {
+  //   digitalWrite(XYE_ENABLE, HIGH);
+  // }
+      
 }
 
-void stop_pitch() {
-  // runAllowed = false;
-
-  // PITCH_STEPPER.setCurrentPosition(0);
-  // PITCH_STEPPER.stop();
-  // PITCH_STEPPER.disableOutputs();
-
-  Serial.println("PITCH MOTOR STOPPED");
-}
-
-// void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxSteps) {
-//   static int count = 0;
-
-//   if (homingState == HOMING_YAW || homingState == HOMING_PITCH) {
-//     targetStepper.setAcceleration(1);
-//     targetStepper.setMaxSpeed(1);
-//     targetStepper.move(1); // Move one step at a time
-
-//     if (digitalRead(axisLimitSwitchPin) == LOW) {
-//       count++;
-//       if (count >= axisMaxSteps) {
-//         targetStepper.setCurrentPosition(0);
-//         count = 0;
-//         if (homingState == HOMING_YAW) {
-//           yawHomed = true;
-//           homingState = HOMING_PITCH;
-//           Serial.println("Yaw homed!");
-//         } else if (homingState == HOMING_PITCH) {
-//           pitchHomed = true;
-//           homingState = IDLE;
-//           Serial.println("Pitch homed!");
-//         }
-//       }
-//     } else {
-//       // Limit switch is triggered
-//       targetStepper.setCurrentPosition(0);
-//       count = 0;
-//       if (homingState == HOMING_YAW) {
-//         yawHomed = true;
-//         homingState = HOMING_PITCH;
-//         Serial.println("Yaw homed!");
-//       } else if (homingState == HOMING_PITCH) {
-//         pitchHomed = true;
-//         homingState = IDLE;
-//         Serial.println("Pitch homed!");
-//       }
-//     }
-//   }
-// }
-void home_axis(AccelStepper& targetStepper, int axisLimitSwitchPin, int axisMaxSteps) {
-    runAllowed = true;  //allow running
-
-    targetStepper.setAcceleration(1);
-    targetStepper.setMaxSpeed(1);
-
-    // YAW_STEPPER.move(-1 * (YAW_MEASURED_STEPS_RANGE + 50));
-    
-    int count = 0;
-    // targetStepper.move(-axisMaxSteps);
-    while (count <= axisMaxSteps && digitalRead(axisLimitSwitchPin) == LOW) {
-      Serial.print("count : "); Serial.println(count);
-      targetStepper.move(1); // this states to move one step ahead
-      targetStepper.runToPosition();
-      // targetStepper.run();
-      count ++;
-    }
-
-    targetStepper.setCurrentPosition(0);
-
-    Serial.print("count : "); Serial.println(count);
-    runAllowed = false;
+void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName) {
+  stepper.setMaxSpeed(HOMING_SPEED);
+  stepper.setAcceleration(HOMING_ACCELERATION);
+  
+  Serial.print("Homing ");
+  Serial.print(motorName);
+  Serial.println("...");
+  
+  // Move towards the limit switch until it reads HIGH
+  stepper.move(10000);
+  stepper.setSpeed(-HOMING_SPEED);  // Negative speed for homing direction
+  while (digitalRead(limitSwitchPin) != HIGH) {
+    stepper.run();
+    // stepper.runSpeed();
+  }
+  // delayMicroseconds(400);
+  
+  // Limit switch reached, set current position to 0
+  stepper.setCurrentPosition(0);
+  stepper.stop();
+  
+  Serial.print(motorName);
+  Serial.println(" homed");
 }
 
 void setup() {
@@ -125,29 +98,27 @@ void setup() {
   pinMode(_LED_BUILTIN_, OUTPUT);
   pinMode(YAW_LIMIT_PIN, INPUT_PULLUP);
   pinMode(PITCH_LIMIT_PIN, INPUT_PULLUP);
-
+  pinMode(XYE_ENABLE, OUTPUT);
+  
   PITCH_STEPPER.setMaxSpeed(MOTORS_MAX_SPEED);
   PITCH_STEPPER.setSpeed(MOTORS_MAX_SPEED);
   YAW_STEPPER.setMaxSpeed(MOTORS_MAX_SPEED);
   YAW_STEPPER.setSpeed(MOTORS_MAX_SPEED);
   
-  while (digitalRead(YAW_LIMIT_PIN) != LOW || digitalRead(PITCH_LIMIT_PIN) != LOW)
-  {
-    delay(10);
-  }
-
-  Serial.println("Homing YAW");
-  home_axis(YAW_STEPPER, YAW_LIMIT_PIN, YAW_MEASURED_STEPS_RANGE);
-
-  delay(1000);
-
-  Serial.println("Homing PITCH");
-  home_axis(PITCH_STEPPER, PITCH_LIMIT_PIN, PITCH_MEASURED_STEPS_RANGE);
+  setMotorsEn(MOT_ENABLED);
   
-  delay(1000);
+  // Home yaw motor until its limit switch reads HIGH
+  homeMotor(YAW_STEPPER, YAW_LIMIT_PIN, "YAW");
+  yawHomed = true;
+  
+  // Home pitch motor until its limit switch reads HIGH
+  homeMotor(PITCH_STEPPER, PITCH_LIMIT_PIN, "PITCH");
+  pitchHomed = true;
+  
+  Serial.println("All motors homed. Ready.");
 
-  // attachInterrupt(digitalPinToInterrupt(DDC2), stop_yaw, HIGH);
-  // attachInterrupt(digitalPinToInterrupt(DDC1), stop_pitch, HIGH);
+  setMotorsEn(MOT_DISABLED);
+
 }
 
 void checkSerial()  //method for receiving the commands
@@ -200,8 +171,5 @@ void checkSerial()  //method for receiving the commands
 
 }
 
-  // the loop function runs over and over again forever
   void loop() {
-    delay(1000);
-    Serial.println(floor(millis() / 1000));
   }
