@@ -4,24 +4,31 @@
 
 #define _LED_BUILTIN_ 27
 
-#define MOTORS_MAX_SPEED 300.0
-//Home the yaw motor once and set here the measured steps it took to reach the end switch
-#define PITCH_MEASURED_STEPS_RANGE 1000
+#define MOTORS_MAX_SPEED 500.0
+#define HOMING_SPEED 300.0
+#define HOMING_ACCELERATION 100.0
+
 // #define YAW_STEP_PIN 15
-#define PITCH_STEP_PIN 15
-#define PITCH_DIR_PIN 21
-#define PITCH_LIMIT_PIN 18
+#define YAW_STEP_PIN 15
+#define YAW_DIR_PIN 21
+#define YAW_LIMIT_PIN 18
 
-//Home the pitch motor once and set here the measured steps it took to reach the end switch
-#define YAW_MEASURED_STEPS_RANGE 1000
-
-#define YAW_STEP_PIN 22
-#define YAW_DIR_PIN 23
-#define YAW_LIMIT_PIN 19
+#define PITCH_STEP_PIN 22
+#define PITCH_DIR_PIN 23
+#define PITCH_LIMIT_PIN 19
 
 #define XYE_ENABLE 14
+#define FAN 5
 
-// #define PITCH_LIMIT_PIN PC2
+// 84/18 teeth
+const float gear_ratio = 4.666666667;
+const float yaw_degs_per_steps = 1.8;
+const float pitch_degs_per_steps = 1.8;
+
+const int SAFETY_STEPS = -50;
+const float yaw_measured_steps_range =  ((360 * gear_ratio)/1.8) * 2 + SAFETY_STEPS;
+const float pitch_measured_steps_range =  ((360 * gear_ratio)/1.8) + SAFETY_STEPS;
+
 
 AccelStepper YAW_STEPPER(AccelStepper::DRIVER, YAW_STEP_PIN, YAW_DIR_PIN);
 AccelStepper PITCH_STEPPER(AccelStepper::DRIVER, PITCH_STEP_PIN, PITCH_DIR_PIN);
@@ -30,15 +37,12 @@ AccelStepper PITCH_STEPPER(AccelStepper::DRIVER, PITCH_STEP_PIN, PITCH_DIR_PIN);
 volatile bool runAllowed = false;
 enum HomingState { IDLE, HOMING_YAW, HOMING_PITCH };
 enum MotorsEnableState { MOT_ENABLED, MOT_DISABLED };
+enum DIRECTION {CW, CCW};
+
 HomingState homingState = IDLE;
 bool yawHomed = false;
 bool pitchHomed = false;
 //Runtime constants
-int YAW_SAFE_RANGE = YAW_MEASURED_STEPS_RANGE - 50;
-int PITCH_SAFE_RANGE = PITCH_MEASURED_STEPS_RANGE - 50;
-
-#define HOMING_SPEED 500.0
-#define HOMING_ACCELERATION 100.0
 
 void setMotorsEn(MotorsEnableState desiredState) {
   switch (desiredState)
@@ -65,7 +69,7 @@ void setMotorsEn(MotorsEnableState desiredState) {
       
 }
 
-void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName) {
+void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName, DIRECTION direction) {
   stepper.setMaxSpeed(HOMING_SPEED);
   stepper.setAcceleration(HOMING_ACCELERATION);
   
@@ -74,8 +78,8 @@ void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName)
   Serial.println("...");
   
   // Move towards the limit switch until it reads HIGH
-  stepper.move(10000);
-  stepper.setSpeed(-HOMING_SPEED);  // Negative speed for homing direction
+  stepper.move(10000 * (direction == CW ? -1 : 1));
+  stepper.setSpeed(HOMING_SPEED);
   while (digitalRead(limitSwitchPin) != HIGH) {
     stepper.run();
     // stepper.runSpeed();
@@ -84,6 +88,11 @@ void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName)
   
   // Limit switch reached, set current position to 0
   stepper.setCurrentPosition(0);
+  // stepper.setSpeed();
+  stepper.move(500 * (direction == CW ? 1 : -1));
+  stepper.runToPosition();
+
+  
   stepper.stop();
   
   Serial.print(motorName);
@@ -99,6 +108,7 @@ void setup() {
   pinMode(YAW_LIMIT_PIN, INPUT_PULLUP);
   pinMode(PITCH_LIMIT_PIN, INPUT_PULLUP);
   pinMode(XYE_ENABLE, OUTPUT);
+  pinMode(FAN, OUTPUT);
   
   PITCH_STEPPER.setMaxSpeed(MOTORS_MAX_SPEED);
   PITCH_STEPPER.setSpeed(MOTORS_MAX_SPEED);
@@ -106,14 +116,25 @@ void setup() {
   YAW_STEPPER.setSpeed(MOTORS_MAX_SPEED);
   
   setMotorsEn(MOT_ENABLED);
-  
+  digitalWrite(FAN, HIGH);
+
   // Home yaw motor until its limit switch reads HIGH
-  homeMotor(YAW_STEPPER, YAW_LIMIT_PIN, "YAW");
+  homeMotor(YAW_STEPPER, YAW_LIMIT_PIN, "YAW", CCW);
   yawHomed = true;
+  Serial.print("YAW_STEPPER.currentPosition() : "); Serial.println(YAW_STEPPER.currentPosition());
+  Serial.print("yaw_measured_steps_range : "); Serial.println(yaw_measured_steps_range);
+  YAW_STEPPER.moveTo(-yaw_measured_steps_range);
+  YAW_STEPPER.runToPosition();
+  Serial.print("YAW_STEPPER.currentPosition() : "); Serial.println(YAW_STEPPER.currentPosition());
+
   
   // Home pitch motor until its limit switch reads HIGH
-  homeMotor(PITCH_STEPPER, PITCH_LIMIT_PIN, "PITCH");
-  pitchHomed = true;
+  // homeMotor(PITCH_STEPPER, PITCH_LIMIT_PIN, "PITCH", CW);
+  // pitchHomed = true;
+  // Serial.print("PITCH_STEPPER.currentPosition() : "); Serial.println(PITCH_STEPPER.currentPosition());
+  // PITCH_STEPPER.moveTo(6000);
+  // PITCH_STEPPER.runToPosition();
+  // Serial.print("PITCH_STEPPER.currentPosition() : "); Serial.println(PITCH_STEPPER.currentPosition());
   
   Serial.println("All motors homed. Ready.");
 
