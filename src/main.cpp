@@ -69,8 +69,18 @@ HomingState homingState = IDLE;
 bool yawHomed = false;
 bool pitchHomed = false;
 
-int degreesToStep(int degrees) {
+int getSafePosition(int target) {
+  int abs_target = abs(target);
+  int lower_thresh = steps_safety_offset / 2.0f;
+  int upper_thresh = yaw_full_range - (steps_safety_offset / 2.0f);
 
+  return max(lower_thresh, min(upper_thresh, abs_target));
+}
+
+int degreesToStep(int axis_full_steps, float target_degrees) {
+    int steps_target = map(0, 360, 0, yaw_full_range, target_degrees);
+    int safe_stesps_target = getSafePosition(target_degrees);
+    return safe_stesps_target;
 }
 
 void setMotorsEn(MotorsEnableState desiredState)
@@ -98,19 +108,20 @@ void setMotorsEn(MotorsEnableState desiredState)
     // }
 }
 
-float getSafePosition(float target, int direction) {
-  float abs_target = abs(target);
-  float safe_pos = min((steps_safety_offset / 2.0f), max(abs_target, yaw_full_range - (steps_safety_offset / 2.0f)));
-  return safe_pos * direction;
-}
+// void safeMove(AccelStepper& stepper, int direction, float target) {
+//   int abs_target = abs(target);
+//   int lower_thresh = steps_safety_offset / 2.0f;
+//   int upper_thresh = yaw_full_range - (steps_safety_offset / 2.0f);
 
-void safeMove(AccelStepper& stepper, int direction, float target) {
-  int abs_target = abs(target);
-  if (abs_target > (steps_safety_offset / 2.0f) && abs_target < (yaw_full_range - (steps_safety_offset / 2.0f))) {
-    
-  }
-  
-}
+//   int l = max(lower_thresh, abs_target);
+//   int u = min(upper_thresh, l);
+
+//   return u;
+
+//   int min = max(abs_target)
+//   if (abs_target > (steps_safety_offset / 2.0f) && abs_target < (yaw_full_range - (steps_safety_offset / 2.0f))) {
+//   }
+// }
 
 void homeMotor(AccelStepper& stepper, int limitSwitchPin, const char* motorName, int direction)
 {
@@ -197,53 +208,72 @@ void setup()
 
 void checkSerial() // method for receiving the commands
 {
-    // switch-case would also work, and maybe more elegant
+    static String serialBuffer = "";
 
-    char receivedCommand = '\0'; // Initialize to null
-    if (Serial.available() > 0)  // if something comes
-    {
-        receivedCommand = Serial.read();
-    }
+    // Read all available data from serial
+    while (Serial.available() > 0) {
+        char c = Serial.read();
+        // Check for end of line (newline or carriage return)
+        if (c == '\n' || c == '\r') {
+            if (serialBuffer.length() > 0) {
+                // Process complete command
+                if (serialBuffer == "n") {
+                    runAllowed = false;
+                    PITCH_STEPPER.stop();
+                    PITCH_STEPPER.disableOutputs();
+                    YAW_STEPPER.stop();
+                    YAW_STEPPER.disableOutputs();
+                    Serial.println("STOPPED ALL STEPPERS");
+                }
+                else if (serialBuffer.startsWith("moveto")) {
+                    // Extract parameters (everything after "moveto")
+                    String params = serialBuffer.substring(6);
+                    params.trim();
 
-    if (receivedCommand != '\0')
-    {
-        switch (receivedCommand)
-        {
-        case 'n':
-            runAllowed = false; // disable running
+                    // Find the space separating the two values
+                    int spaceIndex = params.indexOf(' ');
+                    if (spaceIndex > 0 && spaceIndex < params.length() - 1) {
+                        String yawStr = params.substring(0, spaceIndex);
+                        String pitchStr = params.substring(spaceIndex + 1);
+                        pitchStr.trim();
 
-            // PITCH_STEPPER.setCurrentPosition(0);  // reset position
-            PITCH_STEPPER.stop();           // stop motor
-            PITCH_STEPPER.disableOutputs(); // disable power
+                        // Parse floats
+                        float yawAngle = yawStr.toFloat();
+                        float pitchAngle = pitchStr.toFloat();
 
-            YAW_STEPPER.stop();           // stop motor
-            YAW_STEPPER.disableOutputs(); // disable power
+                        if (!isnan(yawAngle) && !isnan(pitchAngle)) {
+                            runAllowed = true;
 
-            Serial.println("STOPPED ALL STEPPERS");
-            break;
-        default:
-            Serial.println("Received odd command : ");
-            Serial.println(receivedCommand);
+                            // Convert degrees to steps
+                            // 0-360 degrees maps to 0-axis_full_range steps
+                            int yawSteps = static_cast<int>((yawAngle / 360.0) * yaw_full_range * yaw_dir);
+                            int pitchSteps = static_cast<int>((pitchAngle / 360.0) * pitch_full_range * pitch_dir);
+
+                            // Apply safety limits and move
+                            YAW_STEPPER.moveTo(getSafePosition(yawSteps));
+                            PITCH_STEPPER.moveTo(getSafePosition(pitchSteps));
+
+                            Serial.print("Moving to YAW: ");
+                            Serial.print(yawAngle, 2); // 2-digit precision
+                            Serial.print(", PITCH: ");
+                            Serial.println(pitchAngle, 2); // 2-digit precision
+                        } else {
+                            Serial.println("Error: moveto requires two valid float values");
+                        }
+                    } else {
+                        Serial.println("Error: moveto requires two float arguments (e.g., 'moveto 45.00 90.00')");
+                    }
+                }
+                else {
+                    Serial.print("Received odd command: ");
+                    Serial.println(serialBuffer);
+                }
+                serialBuffer = ""; // Clear buffer for next command
+            }
+        } else {
+            // Add character to buffer
+            serialBuffer += c;
         }
-        // START - MEASURE
-        //  if (receivedCommand == 's')  //this is the measure part
-        //  {
-        //    //example s 2000 500 - 2000 steps (5 revolution with 400 step/rev
-        //    microstepping) and 500 steps/s speed runallowed = true;  //allow
-        //    running
-
-        //   receivedMMdistance = Serial.parseFloat();  //value for the steps
-        //   receivedDelay = Serial.parseFloat();       //value for the speed
-
-        //   Serial.print(receivedMMdistance);  //print the values for checking
-        //   Serial.print(receivedDelay);
-        //   Serial.println("Measure ");          //print the action
-        //   stepper.setMaxSpeed(receivedDelay);  //set speed
-        //   stepper.move(receivedMMdistance);    //set distance
-        // }
-        // after we went through the above tasks, newData becomes false again,
-        // so we are ready to receive new commands again.
-        // newData = false;
     }
 }
 
@@ -261,26 +291,28 @@ void loop()
         }
     }
 
+    checkSerial();
 
-    if (YAW_STEPPER.distanceToGo() == 0)
-    {
-      if (yaw_target < middle) {
+    // if (YAW_STEPPER.distanceToGo() == 0)
+    // {
+    //   if (yaw_target < middle) {
         
-        int new_target = middle + 1000;
-        // Serial.print("getSafePosition(new_target, yaw_dir) : "); Serial.println(getSafePosition(new_target, yaw_dir));
-        Serial.print("new_target a : "); Serial.println(new_target);
-        // YAW_STEPPER.moveTo(getSafePosition(new_target, yaw_dir));
-        YAW_STEPPER.moveTo(new_target * yaw_dir);
-        yaw_target = new_target;
-      } else if (yaw_target >= middle) {
-        int new_target = middle - 1000;
-        Serial.print("new_target b : "); Serial.println(new_target);
-        // YAW_STEPPER.moveTo(getSafePosition(new_target, yaw_dir));
-        YAW_STEPPER.moveTo(new_target * yaw_dir);
-        yaw_target = new_target;
-      }
-    }
+    //     int new_target = middle + 1000;
+    //     // Serial.print("getSafePosition(new_target, yaw_dir) : "); Serial.println(getSafePosition(new_target, yaw_dir));
+    //     Serial.print("new_target a : "); Serial.println(new_target);
+    //     // YAW_STEPPER.moveTo(getSafePosition(new_target, yaw_dir));
+    //     YAW_STEPPER.moveTo(new_target * yaw_dir);
+    //     yaw_target = new_target;
+    //   } else if (yaw_target >= middle) {
+    //     int new_target = middle - 1000;
+    //     Serial.print("new_target b : "); Serial.println(new_target);
+    //     // YAW_STEPPER.moveTo(getSafePosition(new_target, yaw_dir));
+    //     YAW_STEPPER.moveTo(new_target * yaw_dir);
+    //     yaw_target = new_target;
+    //   }
+    // }
     YAW_STEPPER.run();
+    PITCH_STEPPER.run();
 
     // STEPPERS.moveTo();
 
