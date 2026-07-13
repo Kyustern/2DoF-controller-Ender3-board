@@ -6,12 +6,27 @@ Lists available serial ports, lets user select one, and sends a sample moveto co
 
 import serial
 import serial.tools.list_ports
+import threading
+import time
 
 
 def list_serial_ports():
     """Return a list of available serial ports."""
     ports = serial.tools.list_ports.comports()
     return [port.device for port in ports]
+
+
+def serial_reader(ser):
+    """Thread function to continuously read and print serial output."""
+    while True:
+        try:
+            if ser.in_waiting > 0:
+                line = ser.readline().decode().strip()
+                if line:
+                    print(f"[Serial] {line}")
+        except:
+            break
+        time.sleep(0.01)
 
 
 def main():
@@ -50,22 +65,18 @@ def main():
         print(f"Connected to {selected_port} at 9600 baud.")
         print("Type 'exit' to quit.\n")
 
-        # Send a sample moveto command
-        sample_yaw = 45.00
-        sample_pitch = 30.00
-        command = f"moveto {sample_yaw:.2f} {sample_pitch:.2f}\n"
-        
-        print(f"Sending command: {command.strip()}")
-        ser.write(command.encode())
-        
-        # Wait for response
-        try:
-            response = ser.readline().decode().strip()
-            if response:
-                print(f"Response: {response}")
-        except:
-            pass
+        # Start serial reader thread
+        reader_thread = threading.Thread(target=serial_reader, args=(ser,), daemon=True)
+        reader_thread.start()
 
+        # Send a sample moveto command
+        # sample_yaw = 45.00
+        # sample_pitch = 30.00
+        # command = f"moveto {sample_yaw:.2f} {sample_pitch:.2f}\n"
+        
+        # print(f"Sending command: {command.strip()}")
+        # ser.write(command.encode())
+        
         # Interactive mode
         while True:
             user_input = input("Enter command (or 'exit'): ").strip()
@@ -78,14 +89,6 @@ def main():
                 full_command = user_input + '\n'
                 print(f"Sending: {user_input}")
                 ser.write(full_command.encode())
-                
-                # Read response
-                try:
-                    response = ser.readline().decode().strip()
-                    if response:
-                        print(f"Response: {response}")
-                except:
-                    pass
 
         ser.close()
         print("Connection closed.")

@@ -246,17 +246,19 @@ void checkSerial() // method for receiving the commands
 
                             // Convert degrees to steps
                             // 0-360 degrees maps to 0-axis_full_range steps
-                            int yawSteps = static_cast<int>((yawAngle / 360.0) * yaw_full_range * yaw_dir);
-                            int pitchSteps = static_cast<int>((pitchAngle / 360.0) * pitch_full_range * pitch_dir);
+                            int yawSteps = static_cast<int>((yawAngle / 360.0) * yaw_full_range);
+                            int pitchSteps = static_cast<int>((pitchAngle / 360.0) * pitch_full_range);
 
                             // Apply safety limits and move
-                            YAW_STEPPER.moveTo(getSafePosition(yawSteps));
-                            PITCH_STEPPER.moveTo(getSafePosition(pitchSteps));
-
-                            Serial.print("Moving to YAW: ");
-                            Serial.print(yawAngle, 2); // 2-digit precision
-                            Serial.print(", PITCH: ");
-                            Serial.println(pitchAngle, 2); // 2-digit precision
+                            YAW_STEPPER.moveTo(getSafePosition(yawSteps) * yaw_dir);
+                            PITCH_STEPPER.moveTo(getSafePosition(pitchSteps * pitch_dir));
+                            
+                            Serial.print("getSafePosition(yawSteps) * yaw_dir : "); Serial.println(getSafePosition(yawSteps) * yaw_dir);
+                            Serial.print("getSafePosition(pitchSteps * pitch_dir : "); Serial.println(getSafePosition(pitchSteps) * pitch_dir);
+                            // Serial.print("Moving to YAW: ");
+                            // Serial.print(yawAngle, 2); // 2-digit precisionj
+                            // Serial.print(", PITCH: ");
+                            // Serial.println(pitchAngle, 2); // 2-digit precision
                         } else {
                             Serial.println("Error: moveto requires two valid float values");
                         }
